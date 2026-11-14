@@ -39,7 +39,7 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli@latest deploy --dir=public --prod --message "GitHub Actions ${{ github.sha }}"
+       run: npx --yes netlify-cli@latest deploy --dir=public --prod --no-build --message "GitHub Actions ${{ github.sha }}"
 
       - name: Signaler l'échec du planning (e-mail GitHub)
         if: steps.planning.outcome == 'failure'
