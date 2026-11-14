@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<title>Écran de l'open space · Envoyer un message</title>
+<style>
+  :root { --bg:#14120f; --card:#1f1c17; --line:#3a352c; --txt:#f1ece2; --dim:#a39b8b; --acc:#e9a23b; --ok:#6fcf97; --err:#ff7a6b; }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--txt); font:17px/1.4 -apple-system, "Helvetica Neue", Arial, sans-serif; padding:env(safe-area-inset-top) 16px 40px; }
+  main { max-width:560px; margin:0 auto; padding-top:20px; }
+  h1 { font-size:22px; margin:0 0 4px; }
+  p.sub { margin:0 0 20px; color:var(--dim); font-size:15px; }
+  label { display:block; font-size:14px; color:var(--dim); margin:16px 0 6px; }
+  input, textarea, select, button { font:inherit; color:var(--txt); }
+  input, textarea, select { width:100%; background:var(--card); border:1px solid var(--line); border-radius:10px; padding:12px 14px; }
+  textarea { resize:none; height:92px; text-transform:uppercase; letter-spacing:.04em; }
+  input:focus, textarea:focus, select:focus { outline:2px solid var(--acc); border-color:transparent; }
+  .row { display:flex; gap:10px; }
+  .row > * { flex:1; }
+  .count { text-align:right; font-size:13px; color:var(--dim); margin-top:4px; }
+  .count.over { color:var(--err); }
+  .remember { display:flex; align-items:center; gap:8px; margin-top:8px; font-size:14px; color:var(--dim); }
+  .remember input { width:auto; }
+  .board { background:#000; border-radius:12px; padding:12px; margin-top:6px; display:grid; gap:3px; grid-template-columns:repeat(18, 1fr); }
+  .t { aspect-ratio:3/4; border-radius:3px; background:#1b1b1b; color:#f4efe4; display:flex; align-items:center; justify-content:center; font:700 13px "Courier New", monospace; }
+  button.go { width:100%; margin-top:20px; background:var(--acc); color:#1a1405; border:0; border-radius:12px; padding:15px; font-weight:700; font-size:18px; }
+  button.go:disabled { opacity:.5; }
+  #msg { min-height:24px; margin-top:12px; font-size:15px; }
+  #msg.ok { color:var(--ok); } #msg.err { color:var(--err); }
+  h2 { font-size:16px; margin:32px 0 8px; color:var(--dim); font-weight:600; }
+  .item { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:10px 12px; margin-bottom:8px; display:flex; gap:10px; align-items:center; }
+  .item b { display:block; font-weight:600; letter-spacing:.03em; }
+  .item small { color:var(--dim); }
+  .item div { flex:1; min-width:0; }
+  .item button { background:transparent; border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--err); }
+  .empty { color:var(--dim); font-size:15px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Écran de l'open space</h1>
+  <p class="sub">Le message s'affiche en quelques secondes, avec le bruit de panneau.</p>
+
+  <label for="pin">Code PIN de l'équipe</label>
+  <input id="pin" type="password" inputmode="numeric" autocomplete="current-password" placeholder="••••">
+  <label class="remember"><input id="rem" type="checkbox" checked> Retenir le code sur cet appareil</label>
+
+  <label for="text">Message</label>
+  <textarea id="text" maxlength="72" placeholder="Pot de départ ce soir 18h, salle Archives"></textarea>
+  <div id="count" class="count">0 / 72</div>
+
+  <label>Aperçu sur l'écran</label>
+  <div class="board" id="board"></div>
+
+  <label for="dur">Durée d'affichage</label>
+  <select id="dur">
+    <option value="1">1 heure</option>
+    <option value="4" selected>4 heures</option>
+    <option value="soir">Jusqu'à ce soir (20 h)</option>
+    <option value="24">24 heures</option>
+    <option value="72">3 jours</option>
+  </select>
+
+  <button class="go" id="send">Envoyer à l'écran</button>
+  <div id="msg"></div>
+
+  <h2>Messages en cours</h2>
+  <div id="list"><p class="empty">Chargement…</p></div>
+</main>
+
+<script>
+(function () {
+  const API = '/.netlify/functions/message';
+  const COLS = 18, ROWS = 4;
+  const $ = id => document.getElementById(id);
+  const clean = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+
+  // Même découpage que l'écran.
+  function wrap(text) {
+    const words = clean(text).split(/\s+/).filter(Boolean), lines = [''];
+    for (const w of words) {
+      if (w.length > COLS) return null;
+      const cur = lines[lines.length - 1];
+      if ((cur ? cur.length + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = cur ? cur + ' ' + w : w;
+      else lines.push(w);
+    }
+    return lines.length <= ROWS ? lines : null;
+  }
+
+  const board = $('board');
+  for (let i = 0; i < COLS * ROWS; i++) { const d = document.createElement('div'); d.className = 't'; board.appendChild(d); }
+  function preview() {
+    const text = $('text').value, lines = wrap(text);
+    $('count').textContent = text.length + ' / 72' + (text && !lines ? ' · ne tient pas sur 4 lignes' : '');
+    $('count').className = 'count' + (text && !lines ? ' over' : '');
+    const grid = Array(COLS * ROWS).fill('');
+    (lines || []).slice(0, ROWS).forEach((l, r) => {
+      const left = Math.floor((COLS - l.length) / 2);
+      [...l].forEach((ch, k) => { grid[r * COLS + left + k] = ch === ' ' ? '' : ch; });
+    });
+    [...board.children].forEach((t, i) => { t.textContent = grid[i]; });
+  }
+  $('text').addEventListener('input', preview); preview();
+
+  try { const p = localStorage.getItem('opusPin'); if (p) $('pin').value = p; } catch (e) {}
+
+  function say(t, cls) { const m = $('msg'); m.textContent = t; m.className = cls || ''; }
+  function heures() {
+    const v = $('dur').value;
+    if (v !== 'soir') return Number(v);
+    const now = new Date(), fin = new Date(now); fin.setHours(20, 0, 0, 0);
+    const h = (fin - now) / 3600000;
+    return h >= 1 ? h : 24;
+  }
+  function quand(ms) {
+    const d = new Date(ms);
+    return d.toLocaleDateString('fr-FR', { weekday: 'short', day: 'numeric', month: 'numeric' }) + ' ' + d.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  async function api(method, body) {
+    const r = await fetch(API, { method, headers: { 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined, cache: 'no-store' });
+    let j = {}; try { j = await r.json(); } catch (e) {}
+    if (!r.ok) throw new Error(j.erreur || 'Erreur ' + r.status);
+    return j;
+  }
+  function savePin() {
+    try { if ($('rem').checked) localStorage.setItem('opusPin', $('pin').value); else localStorage.removeItem('opusPin'); } catch (e) {}
+  }
+
+  function render(list) {
+    const box = $('list'); box.innerHTML = '';
+    if (!list.length) { box.innerHTML = '<p class="empty">Aucun message en cours.</p>'; return; }
+    list.sort((a, b) => b.at - a.at).forEach(m => {
+      const it = document.createElement('div'); it.className = 'item';
+      const d = document.createElement('div');
+      const b = document.createElement('b'); b.textContent = m.text;
+      const s = document.createElement('small'); s.textContent = 'jusqu\'au ' + quand(m.until);
+      d.appendChild(b); d.appendChild(s);
+      const x = document.createElement('button'); x.textContent = 'Retirer';
+      x.onclick = async () => {
+        if (!$('pin').value) { say('Saisissez le code PIN pour retirer un message.', 'err'); return; }
+        x.disabled = true;
+        try { const j = await api('DELETE', { pin: $('pin').value, id: m.id }); savePin(); render(j.messages); say('Message retiré.', 'ok'); }
+        catch (e) { say(e.message, 'err'); x.disabled = false; }
+      };
+      it.appendChild(d); it.appendChild(x); box.appendChild(it);
+    });
+  }
+  async function refresh() {
+    try { render((await api('GET')).messages); }
+    catch (e) { $('list').innerHTML = '<p class="empty">Liste indisponible.</p>'; }
+  }
+
+  $('send').onclick = async () => {
+    const text = $('text').value.trim();
+    if (!$('pin').value) return say('Saisissez le code PIN.', 'err');
+    if (!text) return say('Écrivez un message.', 'err');
+    if (!wrap(text)) return say('Le message ne tient pas sur 4 lignes de 18 lettres.', 'err');
+    $('send').disabled = true; say('Envoi…');
+    try {
+      const j = await api('POST', { pin: $('pin').value, text, heures: heures() });
+      savePin(); $('text').value = ''; preview(); render(j.messages);
+      say('Envoyé. Il apparaît sur l\'écran dans quelques secondes.', 'ok');
+    } catch (e) { say(e.message, 'err'); }
+    $('send').disabled = false;
+  };
+  refresh();
+})();
+</script>
+</body>
+</html>

@@ -401,7 +401,7 @@
     const now = new Date(), d = now.getDay(), h = now.getHours();
     const list = CONFIG.messages.filter(m => !m.quand ||
       ((!m.quand.jours || m.quand.jours.includes(d)) && h >= (m.quand.de ?? 0) && h < (m.quand.a ?? 24)));
-    return (list.length ? list : CONFIG.messages).concat(dynamicMessages());
+    return (list.length ? list : CONFIG.messages).concat(dynamicMessages(), liveMessages());
   }
   function nextMessage(manual) {
     if (manual) { customUntil = 0; store.set('customUntil', 0); }
@@ -430,6 +430,37 @@
       }
       if (j.rotationSec && j.rotationSec !== CONFIG.rotationSec) { CONFIG.rotationSec = j.rotationSec; resetRotation(); }
     } catch (e) { /* on garde la configuration embarquée */ }
+  }
+
+  /* ================= Messages envoyés depuis la page envoyer.html ================= */
+  const LIVE_URL = '/.netlify/functions/message';
+  let live = [], liveFirst = true;
+  let seenLive = [];
+  try { seenLive = JSON.parse(store.get('seenLive') || '[]'); } catch (e) { seenLive = []; }
+  function liveMessages() {
+    const now = Date.now();
+    return live.filter(m => m.until > now).map(m => ({ lignes: textToLines(m.text) }));
+  }
+  async function loadLive() {
+    try {
+      const res = await fetch(LIVE_URL + '?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      const j = await res.json();
+      if (!Array.isArray(j.messages)) return;
+      live = j.messages;
+      const fresh = live.filter(m => !seenLive.includes(m.id));
+      seenLive = live.map(m => m.id);
+      store.set('seenLive', JSON.stringify(seenLive));
+      // Au premier chargement, on ne rejoue pas les messages déjà connus.
+      if (liveFirst) { liveFirst = false; return; }
+      if (fresh.length && !isNight()) {
+        const m = fresh[fresh.length - 1];
+        customUntil = Date.now() + 60000;            // le nouveau message reste affiché 1 minute
+        showLines(textToLines(m.text), true);
+        resetRotation();
+        goTo(0);
+      }
+    } catch (e) { /* hors ligne : on garde les messages connus */ }
   }
 
   /* ================= Planning d'équipe (planning.json) ================= */
@@ -674,6 +705,7 @@
   /* ================= Démarrage ================= */
   buildRadios(); buildInstagram(); paintSoundBtn();
   loadRemote(); setInterval(loadRemote, 60000);
+  loadLive(); setInterval(loadLive, 20000);
   buildPlanning(); loadPlanning(); setInterval(loadPlanning, 10 * 60000); setInterval(buildPlanning, 30 * 60000);
   if (Date.now() < customUntil && store.get('customText')) showLines(textToLines(store.get('customText')), false);
   else nextMessage(false);
