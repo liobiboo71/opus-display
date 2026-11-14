@@ -10,15 +10,16 @@ const COLS = 18, ROWS = 4, MAX_ACTIFS = 8, MAX_HEURES = 72;
 
 const clean = s => String(s).normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 
-// Même découpage que l'écran : renvoie les lignes, ou null si le texte ne tient pas.
+// Même découpage que l'écran. Une pastille de couleur [R][O][Y][G][B] compte pour 1 case.
+// Renvoie les lignes, ou null si le texte ne tient pas.
 export function wrap(text) {
-  const words = clean(text).split(/\s+/).filter(Boolean);
-  const lines = [""];
-  for (let w of words) {
+  const words = clean(text).split(/\s+/).filter(Boolean).map(w => w.match(/\[[ROYGB]\]|[\s\S]/g));
+  const lines = [0];
+  for (const w of words) {
     if (w.length > COLS) return null;
     const cur = lines[lines.length - 1];
-    if ((cur ? cur.length + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = cur ? cur + " " + w : w;
-    else lines.push(w);
+    if ((cur ? cur + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = (cur ? cur + 1 : 0) + w.length;
+    else lines.push(w.length);
   }
   return lines.length <= ROWS ? lines : null;
 }
@@ -76,7 +77,7 @@ export async function core(req, store, opts = {}) {
 
   const text = String(body.text ?? "").replace(/[\u0000-\u001f\u007f]/g, " ").replace(/\s+/g, " ").trim();
   if (!text) return json({ erreur: "Le message est vide." }, 400);
-  if (text.length > COLS * ROWS) return json({ erreur: "Message trop long (72 caractères maximum)." }, 400);
+  if (text.length > 400) return json({ erreur: "Message trop long." }, 400);
   if (!wrap(text)) return json({ erreur: "Le message ne tient pas sur 4 lignes de 18 lettres. Raccourcissez-le." }, 400);
 
   const heures = Math.min(Math.max(Number(body.heures) || 4, 0.25), MAX_HEURES);

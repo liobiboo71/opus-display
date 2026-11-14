@@ -346,20 +346,20 @@
     return flat;
   }
   function textToLines(text) {
-    const words = clean(text).split(/\s+/).filter(Boolean);
-    const lines = [''];
+    const words = clean(text).split(/\s+/).filter(Boolean).map(w => w.match(/\[[ROYGB]\]|[\s\S]/g));
+    const lines = [[]];
     words.forEach(w => {
       while (w.length > COLS) {
-        if (lines[lines.length - 1]) lines.push('');
+        if (lines[lines.length - 1].length) lines.push([]);
         lines[lines.length - 1] = w.slice(0, COLS);
         w = w.slice(COLS);
-        lines.push('');
+        lines.push([]);
       }
       const cur = lines[lines.length - 1];
-      if ((cur ? cur + ' ' : '').length + w.length <= COLS) lines[lines.length - 1] = cur ? cur + ' ' + w : w;
+      if ((cur.length ? cur.length + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = cur.length ? cur.concat([' '], w) : w;
       else lines.push(w);
     });
-    return lines.filter((l, i) => l || i < lines.length - 1).slice(0, ROWS);
+    return lines.filter((l, i) => l.length || i < lines.length - 1).slice(0, ROWS).map(l => l.join(''));
   }
 
   let renderId = 0;

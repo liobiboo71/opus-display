@@ -36,6 +36,11 @@
   .item div { flex:1; min-width:0; }
   .item button { background:transparent; border:1px solid var(--line); border-radius:8px; padding:8px 12px; color:var(--err); }
   .empty { color:var(--dim); font-size:15px; }
+  .t.R{background:#e53935} .t.O{background:#fb8c00} .t.Y{background:#fdd835} .t.G{background:#43a047} .t.B{background:#1e88e5}
+  .colors { display:flex; gap:10px; align-items:center; margin-top:10px; }
+  .colors button { width:44px; height:44px; border-radius:10px; border:2px solid rgba(255,255,255,.25); }
+  .colors select { width:auto; flex:1; }
+  .hint { font-size:13px; color:var(--dim); margin-top:6px; }
 </style>
 </head>
 <body>
@@ -48,8 +53,21 @@
   <label class="remember"><input id="rem" type="checkbox" checked> Retenir le code sur cet appareil</label>
 
   <label for="text">Message</label>
-  <textarea id="text" maxlength="72" placeholder="Pot de départ ce soir 18h, salle Archives"></textarea>
-  <div id="count" class="count">0 / 72</div>
+  <textarea id="text" maxlength="400" placeholder="Pot de départ ce soir 18h, salle Archives"></textarea>
+  <div class="colors">
+    <button type="button" data-c="R" style="background:#e53935" aria-label="Rouge"></button>
+    <button type="button" data-c="O" style="background:#fb8c00" aria-label="Orange"></button>
+    <button type="button" data-c="Y" style="background:#fdd835" aria-label="Jaune"></button>
+    <button type="button" data-c="G" style="background:#43a047" aria-label="Vert"></button>
+    <button type="button" data-c="B" style="background:#1e88e5" aria-label="Bleu"></button>
+    <select id="nb" aria-label="Nombre de pastilles">
+      <option value="1">1 pastille</option>
+      <option value="5" selected>5 pastilles</option>
+      <option value="18">Ligne entière</option>
+    </select>
+  </div>
+  <div class="hint">Touchez une couleur pour insérer des pastilles à l'endroit du curseur. Une ligne entière = 18 pastilles.</div>
+  <div id="count" class="count">0 / 4 lignes</div>
 
   <label>Aperçu sur l'écran</label>
   <div class="board" id="board"></div>
@@ -77,13 +95,14 @@
   const $ = id => document.getElementById(id);
   const clean = s => String(s).normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
 
-  // Même découpage que l'écran.
+  // Même découpage que l'écran. Une pastille [R][O][Y][G][B] compte pour 1 case.
+  const TOK = /\[[ROYGB]\]|[\s\S]/g;
   function wrap(text) {
-    const words = clean(text).split(/\s+/).filter(Boolean), lines = [''];
+    const words = clean(text).split(/\s+/).filter(Boolean).map(w => w.match(TOK)), lines = [[]];
     for (const w of words) {
       if (w.length > COLS) return null;
       const cur = lines[lines.length - 1];
-      if ((cur ? cur.length + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = cur ? cur + ' ' + w : w;
+      if ((cur.length ? cur.length + 1 : 0) + w.length <= COLS) lines[lines.length - 1] = cur.length ? cur.concat([' '], w) : w;
       else lines.push(w);
     }
     return lines.length <= ROWS ? lines : null;
@@ -93,16 +112,31 @@
   for (let i = 0; i < COLS * ROWS; i++) { const d = document.createElement('div'); d.className = 't'; board.appendChild(d); }
   function preview() {
     const text = $('text').value, lines = wrap(text);
-    $('count').textContent = text.length + ' / 72' + (text && !lines ? ' · ne tient pas sur 4 lignes' : '');
+    $('count').textContent = (lines ? lines.filter(l => l.length).length : '4+') + ' / 4 lignes' + (text && !lines ? ' · ne tient pas, raccourcissez' : '');
     $('count').className = 'count' + (text && !lines ? ' over' : '');
     const grid = Array(COLS * ROWS).fill('');
     (lines || []).slice(0, ROWS).forEach((l, r) => {
       const left = Math.floor((COLS - l.length) / 2);
-      [...l].forEach((ch, k) => { grid[r * COLS + left + k] = ch === ' ' ? '' : ch; });
+      l.forEach((ch, k) => { grid[r * COLS + left + k] = ch; });
     });
-    [...board.children].forEach((t, i) => { t.textContent = grid[i]; });
+    [...board.children].forEach((t, i) => {
+      const v = grid[i], m = /^\[([ROYGB])\]$/.exec(v);
+      t.className = 't' + (m ? ' ' + m[1] : '');
+      t.textContent = m || v === ' ' ? '' : v;
+    });
   }
   $('text').addEventListener('input', preview); preview();
+
+  document.querySelectorAll('.colors button').forEach(b => b.onclick = () => {
+    const ta = $('text'), n = Number($('nb').value), ins = ('[' + b.dataset.c + ']').repeat(n);
+    const a = ta.selectionStart ?? ta.value.length, e = ta.selectionEnd ?? a;
+    const before = ta.value.slice(0, a), after = ta.value.slice(e);
+    const ins2 = (before && !/[\s\]]$/.test(before) ? ' ' : '') + ins + (after && !/^[\s\[]/.test(after) ? ' ' : '');
+    ta.value = before + ins2 + after;
+    ta.focus(); ta.setSelectionRange(a + ins2.length, a + ins2.length); preview();
+  });
+  const EMO = { R: '🟥', O: '🟧', Y: '🟨', G: '🟩', B: '🟦' };
+  const show = t => t.replace(/\[([ROYGB])\]/gi, (_, c) => EMO[c.toUpperCase()]);
 
   try { const p = localStorage.getItem('opusPin'); if (p) $('pin').value = p; } catch (e) {}
 
@@ -135,7 +169,7 @@
     list.sort((a, b) => b.at - a.at).forEach(m => {
       const it = document.createElement('div'); it.className = 'item';
       const d = document.createElement('div');
-      const b = document.createElement('b'); b.textContent = m.text;
+      const b = document.createElement('b'); b.textContent = show(m.text);
       const s = document.createElement('small'); s.textContent = 'jusqu\'au ' + quand(m.until);
       d.appendChild(b); d.appendChild(s);
       const x = document.createElement('button'); x.textContent = 'Retirer';
@@ -157,7 +191,7 @@
     const text = $('text').value.trim();
     if (!$('pin').value) return say('Saisissez le code PIN.', 'err');
     if (!text) return say('Écrivez un message.', 'err');
-    if (!wrap(text)) return say('Le message ne tient pas sur 4 lignes de 18 lettres.', 'err');
+    if (!wrap(text)) return say('Le message ne tient pas sur 4 lignes de 18 cases.', 'err');
     $('send').disabled = true; say('Envoi…');
     try {
       const j = await api('POST', { pin: $('pin').value, text, heures: heures() });
