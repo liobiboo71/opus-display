@@ -1,0 +1,671 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Opus">
+<meta name="theme-color" content="#0d0f12">
+<title>Opus Display</title>
+<style>
+  :root {
+    --bg: #0d0f12; --card: #181b20; --flap: #22262e;
+    --text: #f4f5f7; --muted: #8b92a0; --accent: #ff9f0a;
+  }
+  * {
+    box-sizing: border-box; margin: 0; padding: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", sans-serif;
+    -webkit-user-select: none; user-select: none;
+    -webkit-touch-callout: none; touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body { background: var(--bg); color: var(--text); height: 100%; overflow: hidden; }
+
+  /* Pages qui défilent */
+  #scroller {
+    height: 100vh; height: 100dvh; width: 100vw; overflow-y: auto; overflow-x: hidden;
+    scroll-snap-type: y mandatory; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  }
+  .page {
+    height: 100vh; height: 100dvh; scroll-snap-align: start; scroll-snap-stop: always;
+    display: grid; gap: 16px;
+    padding: max(20px, env(safe-area-inset-top)) max(20px, env(safe-area-inset-right))
+             max(20px, env(safe-area-inset-bottom)) max(20px, env(safe-area-inset-left));
+  }
+  #p1 { grid-template-rows: auto 1fr auto auto; }
+  #p2, #p3, #p4 { grid-template-rows: auto 1fr auto; }
+  h2 { font-size: clamp(1.6rem, 4vmin, 2.4rem); font-weight: 700; }
+
+  /* Haut : horloge + météo */
+  .top-row { display: grid; grid-template-columns: 1.2fr 1fr; gap: 16px; }
+  .card {
+    background: var(--card); border-radius: 24px; padding: 22px 26px;
+    display: flex; flex-direction: column; justify-content: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .time { font-size: clamp(3.6rem, 12vmin, 7.5rem); font-weight: 700; letter-spacing: -2px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .date { font-size: clamp(1.1rem, 2.6vmin, 1.6rem); color: var(--muted); margin-top: 8px; }
+  .now { font-size: clamp(0.95rem, 2.2vmin, 1.3rem); color: var(--accent); margin-top: 4px; min-height: 1.3em; }
+  .weather-box { align-items: flex-end; text-align: right; }
+  .temp { font-size: clamp(3rem, 10vmin, 6rem); font-weight: 600; line-height: 1; color: var(--accent); }
+  .weather-desc { font-size: clamp(1rem, 2.4vmin, 1.5rem); color: var(--muted); margin-top: 8px; }
+  .weather-sub { font-size: clamp(0.85rem, 2vmin, 1.2rem); color: #5f6672; margin-top: 4px; }
+
+  /* Tableau à volets */
+  .vestaboard {
+    background: #111317; border: 2px solid #2a2f38; border-radius: 24px;
+    padding: 18px; display: flex; flex-direction: column; justify-content: center;
+    container-type: inline-size; overflow: hidden; min-height: 0;
+  }
+  #board { display: flex; flex-direction: column; gap: 6px; perspective: 900px; }
+  .vb-row { display: grid; grid-template-columns: repeat(18, 1fr); gap: 5px; }
+  .tile {
+    background: var(--flap); border-radius: 5px; aspect-ratio: 1/1.25;
+    display: flex; align-items: center; justify-content: center;
+    font-family: "SF Mono", Menlo, "Courier New", monospace; font-weight: 700;
+    font-size: 3vw; font-size: 3.4cqw; color: #fff; position: relative;
+    box-shadow: inset 0 -2px 0 rgba(0,0,0,0.6);
+    transition: transform 0.14s ease-in; transform-origin: 50% 50%;
+  }
+  .tile::after { content: ""; position: absolute; left: 0; right: 0; top: 50%; height: 1px; background: rgba(0,0,0,0.55); }
+  .tile.flip { transform: rotateX(90deg); }
+  .tile.c-red    { background: #e53935; }
+  .tile.c-orange { background: #fb8c00; }
+  .tile.c-yellow { background: #fdd835; color: #111; }
+  .tile.c-green  { background: #43a047; }
+  .tile.c-blue   { background: #1e88e5; }
+
+  /* Commandes (masquées après 10 s) */
+  .dock { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; transition: opacity 0.4s; }
+  .dock.hidden { opacity: 0; pointer-events: none; }
+  .btn {
+    background: var(--card); border: none; border-radius: 18px; padding: 16px 10px;
+    color: var(--text); font-size: 1.05rem; font-weight: 600;
+    display: flex; align-items: center; justify-content: center; gap: 10px; cursor: pointer;
+  }
+  .btn:active { transform: scale(0.97); background: #262b34; }
+  .hint { text-align: center; color: #4d5460; font-size: 0.9rem; }
+
+  /* Planning d'équipe */
+  #planBox { overflow: auto; min-height: 0; background: var(--card); border-radius: 24px; padding: 14px 18px; }
+  #planBox .empty { color: var(--muted); font-size: 1.2rem; text-align: center; padding: 40px; }
+  table.plan { width: 100%; border-collapse: separate; border-spacing: 3px 5px; table-layout: fixed; }
+  table.plan th { color: var(--muted); font-weight: 600; font-size: 0.8rem; text-align: center; padding: 2px 0; }
+  table.plan th span { display: block; }
+  table.plan th b { font-size: 1.05rem; color: var(--text); }
+  table.plan th.today b { color: var(--accent); }
+  table.plan th.name, table.plan td.name { width: 24%; text-align: left; }
+  table.plan td.name { font-weight: 600; font-size: clamp(0.95rem, 2.2vmin, 1.25rem); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  table.plan td.c { height: clamp(28px, 4.6vmin, 42px); background: #1f232a; border-radius: 8px; }
+  table.plan td.c.today { outline: 2px solid var(--accent); outline-offset: -2px; }
+  table.plan td.c.past { opacity: 0.4; }
+  table.plan td.c.aJ { background: #fb8c00; }
+  table.plan td.c.aM { background: linear-gradient(90deg, #fb8c00 50%, #1f232a 50%); }
+  table.plan td.c.aA { background: linear-gradient(90deg, #1f232a 50%, #fb8c00 50%); }
+  #planCap { color: var(--muted); font-size: 0.9rem; margin-top: 4px; }
+  #planCap.warn { color: #e53935; }
+
+  /* Radio */
+  #radioList { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; align-content: start; }
+  .btn.radio { padding: 26px 10px; font-size: 1.3rem; }
+  .btn.radio.active { background: var(--accent); color: #000; }
+  #radioStatus { color: var(--muted); font-size: 1.1rem; margin-top: 4px; }
+  .foot { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+
+  /* Instagram */
+  .igbox { background: var(--card); border-radius: 24px; overflow: hidden; min-height: 0; display: flex; align-items: center; justify-content: center; }
+  .igbox iframe { width: 100%; height: 100%; border: 0; background: #fff; }
+  .igbox p { color: var(--muted); font-size: 1.2rem; text-align: center; padding: 30px; line-height: 1.5; }
+
+  /* Saisie, accroche du son */
+  #modal, #soundGate {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.88); z-index: 10;
+  }
+  #modal { align-items: flex-start; justify-content: center; padding-top: 12vh; }
+  #soundGate { align-items: center; justify-content: center; flex-direction: column; gap: 22px; text-align: center; z-index: 20; }
+  #soundGate .big { font-size: clamp(1.6rem, 4.5vmin, 2.6rem); font-weight: 700; }
+  #soundGate .small { color: var(--muted); font-size: 1rem; padding: 12px 20px; }
+  .modal-content {
+    background: var(--card); padding: 24px; border-radius: 20px; width: 86%; max-width: 560px;
+    display: flex; flex-direction: column; gap: 14px;
+  }
+  input {
+    background: var(--bg); border: 1px solid #333; color: #fff; -webkit-user-select: text; user-select: text;
+    padding: 14px; border-radius: 12px; font-size: 1.1rem;
+  }
+  .help { font-size: 0.85rem; color: var(--muted); line-height: 1.4; }
+
+  /* Mode nuit : voile noir, ne bloque pas les touches */
+  #dim { position: fixed; inset: 0; background: #000; opacity: 0; pointer-events: none; transition: opacity 1.5s; z-index: 5; }
+</style>
+</head>
+<body>
+
+<div id="scroller">
+
+  <!-- Page 1 : tableau -->
+  <section class="page" id="p1">
+    <div class="top-row">
+      <div class="card">
+        <div class="time" id="clock">--:--</div>
+        <div class="date" id="date">Chargement...</div>
+        <div class="now" id="now"></div>
+      </div>
+      <div class="card weather-box">
+        <div class="temp" id="temp">--°</div>
+        <div class="weather-desc" id="wdesc">Météo...</div>
+        <div class="weather-sub" id="wsub"></div>
+      </div>
+    </div>
+
+    <div class="vestaboard"><div id="board"></div></div>
+
+    <div class="dock hidden" id="dock">
+      <button class="btn" onclick="nextMessage(true)">🔄 Suivant</button>
+      <button class="btn" onclick="openModal()">✏️ Écrire</button>
+      <button class="btn" id="btnSound" onclick="toggleSound()">🔊 Son</button>
+      <button class="btn" id="btnDim" onclick="cycleDim()">🌙 Auto</button>
+    </div>
+    <div class="hint">↓ Faites défiler : équipe, radio, Instagram</div>
+  </section>
+
+  <!-- Page 2 : équipe -->
+  <section class="page" id="p2">
+    <div><h2>👥 Équipe</h2><div id="planCap"></div></div>
+    <div id="planBox"></div>
+    <div class="foot">
+      <button class="btn" onclick="goTo(0)">↑ Tableau</button>
+      <button class="btn" onclick="goTo(2)">↓ Radio</button>
+    </div>
+  </section>
+
+  <!-- Page 3 : radio -->
+  <section class="page" id="p3">
+    <div><h2>📻 Radio</h2><div id="radioStatus">Choisissez une station.</div></div>
+    <div id="radioList"></div>
+    <div class="foot">
+      <button class="btn" onclick="stopRadio()">⏹ Arrêter</button>
+      <button class="btn" onclick="goTo(0)">↑ Tableau</button>
+    </div>
+  </section>
+
+  <!-- Page 4 : Instagram -->
+  <section class="page" id="p4">
+    <h2>📷 Instagram</h2>
+    <div class="igbox" id="igbox"></div>
+    <div class="foot">
+      <button class="btn" onclick="goTo(2)">↑ Radio</button>
+      <button class="btn" onclick="goTo(0)">↑ Tableau</button>
+    </div>
+  </section>
+
+</div>
+
+<div id="modal">
+  <div class="modal-content">
+    <h3>Nouveau message</h3>
+    <input type="text" id="msgInput" maxlength="72" placeholder="Ex : BONNE JOURNEE A TOUS !" autocapitalize="characters" autocomplete="off">
+    <div class="help">72 caractères maximum. Les accents sont retirés automatiquement. Le message reste affiché 60 minutes.</div>
+    <div style="display:flex; gap:10px; justify-content:space-between;">
+      <button class="btn" onclick="location.reload()">↻ Recharger</button>
+      <div style="display:flex; gap:10px;">
+        <button class="btn" onclick="closeModal()">Annuler</button>
+        <button class="btn" style="background:var(--accent); color:#000;" onclick="saveCustomMsg()">Afficher</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="soundGate" onclick="enableSound()">
+  <div class="big">🔊 Touchez l'écran pour activer le son</div>
+  <div class="small" onclick="event.stopPropagation(); disableSound()">Continuer sans son</div>
+</div>
+
+<div id="dim"></div>
+
+<script>
+  /* ================= CONFIGURATION (à modifier ici) ================= */
+  const CONFIG = {
+    lat: 48.8627, lon: 2.3566,          // 66 rue des Archives, Paris 3e
+    rotationSec: 45,                     // durée d'affichage de chaque message
+    customHoldMin: 60,                   // durée d'un message écrit à la main
+    retourAccueilSec: 120,               // retour automatique au tableau après inactivité
+    nuit: { debut: 20, fin: 7, voile: 0.88 },
+    son: { actif: true, volume: 0.85, surRotation: true },  // surRotation: false = son seulement sur action manuelle
+    messages: [
+      { lignes: ["BONJOUR A TOUS", "2LE ARCHITECTURE", "STUDIO BOAZ", "[B][B][B][B][B]"] },
+      { lignes: ["PENSEZ A SAISIR", "VOS TEMPS", "DANS OOTI", "[Y][Y][Y][Y][Y]"] },
+      { lignes: ["LESS IS MORE", "", "MIES VAN DER ROHE", "[O][O][O][O][O]"] },
+      { lignes: ["BON APPETIT", "", "PAUSE DEJEUNER", "[G][G][G][G][G]"], quand: { jours: [1,2,3,4,5], de: 12, a: 14 } },
+      { lignes: ["BON WEEK-END", "A TOUS !", "", "[R][O][Y][G][B]"], quand: { jours: [5], de: 16, a: 24 } }
+    ],
+    /* Flux à tester sur l'iPad. Remplaçables dans messages.json. */
+    radios: [
+      { nom: "FIP",              url: "https://icecast.radiofrance.fr/fip-midfi.mp3?id=radiofrance" },
+      { nom: "FIP Jazz",         url: "https://icecast.radiofrance.fr/fipjazz-midfi.mp3?id=radiofrance" },
+      { nom: "FIP Groove",       url: "https://icecast.radiofrance.fr/fipgroove-midfi.mp3?id=radiofrance" },
+      { nom: "FIP Électro",      url: "https://icecast.radiofrance.fr/fipelectro-midfi.mp3?id=radiofrance" },
+      { nom: "FIP Pop",          url: "https://icecast.radiofrance.fr/fippop-midfi.mp3?id=radiofrance" },
+      { nom: "France Musique Easy", url: "https://icecast.radiofrance.fr/francemusiqueeasyclassique-midfi.mp3?id=radiofrance" }
+    ],
+    instagram: { url: "" }   // adresse d'intégration, étape 5
+  };
+  /* ================================================================== */
+
+  const ROWS = 4, COLS = 18;
+  const COLORS = { '[R]': 'c-red', '[O]': 'c-orange', '[Y]': 'c-yellow', '[G]': 'c-green', '[B]': 'c-blue' };
+  const $ = id => document.getElementById(id);
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  };
+
+  /* ================= SON : claquement de volets ================= */
+  function makeNoise(ctx) {
+    const len = Math.floor(ctx.sampleRate * 0.06);
+    const b = ctx.createBuffer(1, len, ctx.sampleRate), d = b.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+    return b;
+  }
+  // Un claquement : bruit filtré très court, plus un léger choc grave
+  function clack(ctx, dest, buf, t, vol, thump) {
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    src.playbackRate.value = 0.7 + Math.random() * 0.8;
+    const bp = ctx.createBiquadFilter(); bp.type = 'bandpass';
+    bp.frequency.value = 1200 + Math.random() * 2800; bp.Q.value = 0.9;
+    const g = ctx.createGain(), dur = 0.010 + Math.random() * 0.012;
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(vol, t + 0.0015);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+    src.connect(bp); bp.connect(g); g.connect(dest);
+    src.start(t); src.stop(t + dur + 0.01);
+    if (thump) {
+      const o = ctx.createOscillator(); o.frequency.value = 110 + Math.random() * 80;
+      const og = ctx.createGain();
+      og.gain.setValueAtTime(vol * 0.6, t);
+      og.gain.exponentialRampToValueAtTime(0.0001, t + 0.025);
+      o.connect(og); og.connect(dest); o.start(t); o.stop(t + 0.03);
+    }
+  }
+
+  let actx = null, noiseBuf = null, master = null;
+  let soundOn = store.get('sound') !== '0' && CONFIG.son.actif;
+  function initAudio() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return false;
+    if (!actx) {
+      actx = new AC();
+      noiseBuf = makeNoise(actx);
+      const comp = actx.createDynamicsCompressor();
+      master = actx.createGain(); master.gain.value = CONFIG.son.volume;
+      master.connect(comp); comp.connect(actx.destination);
+    }
+    if (actx.state !== 'running') actx.resume();
+    return true;
+  }
+  function canSound() { return soundOn && actx && actx.state === 'running' && !dimmedNow(); }
+  function paintSoundBtn() { $('btnSound').textContent = soundOn ? '🔊 Son : oui' : '🔇 Son : non'; }
+  function enableSound() { initAudio(); $('soundGate').style.display = 'none'; nextMessage(true); }
+  function disableSound() { soundOn = false; store.set('sound', '0'); $('soundGate').style.display = 'none'; paintSoundBtn(); }
+  function toggleSound() {
+    soundOn = !soundOn; store.set('sound', soundOn ? '1' : '0');
+    if (soundOn) initAudio();
+    paintSoundBtn(); showDock();
+  }
+
+  /* ================= Grille ================= */
+  const boardEl = $('board');
+  const tiles = [];
+  for (let r = 0; r < ROWS; r++) {
+    const rowDiv = document.createElement('div');
+    rowDiv.className = 'vb-row';
+    for (let c = 0; c < COLS; c++) {
+      const t = document.createElement('div');
+      t.className = 'tile';
+      rowDiv.appendChild(t);
+      tiles.push(t);
+    }
+    boardEl.appendChild(rowDiv);
+  }
+
+  function clean(s) { return s.normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase(); }
+  function tokenize(line) { return clean(line).trim().match(/\[[ROYGB]\]|[\s\S]/g) || []; }
+  function layout(lines) {
+    const flat = [];
+    for (let r = 0; r < ROWS; r++) {
+      const t = tokenize(lines[r] || '').slice(0, COLS);
+      const left = Math.floor((COLS - t.length) / 2);
+      for (let c = 0; c < COLS; c++) {
+        const k = c - left;
+        flat.push(k >= 0 && k < t.length ? t[k] : ' ');
+      }
+    }
+    return flat;
+  }
+  function textToLines(text) {
+    const words = clean(text).split(/\s+/).filter(Boolean);
+    const lines = [''];
+    words.forEach(w => {
+      while (w.length > COLS) {
+        if (lines[lines.length - 1]) lines.push('');
+        lines[lines.length - 1] = w.slice(0, COLS);
+        w = w.slice(COLS);
+        lines.push('');
+      }
+      const cur = lines[lines.length - 1];
+      if ((cur ? cur + ' ' : '').length + w.length <= COLS) lines[lines.length - 1] = cur ? cur + ' ' + w : w;
+      else lines.push(w);
+    });
+    return lines.filter((l, i) => l || i < lines.length - 1).slice(0, ROWS);
+  }
+
+  let renderId = 0;
+  function applyTile(tile, val) {
+    tile.className = 'tile';
+    tile.dataset.v = val;
+    const cls = COLORS[val];
+    if (cls) { tile.classList.add(cls); tile.textContent = ''; }
+    else tile.textContent = val === ' ' ? '' : val;
+  }
+  function showLines(lines, withSound) {
+    const id = ++renderId;
+    const flat = layout(lines);
+    const play = withSound && canSound();
+    const base = play ? actx.currentTime + 0.05 : 0;
+    tiles.forEach((tile, i) => {
+      const val = flat[i];
+      if (tile.dataset.v === val) return;
+      const r = Math.floor(i / COLS), c = i % COLS, delay = r * 60 + c * 22;
+      if (play) {
+        clack(actx, master, noiseBuf, base + delay / 1000, 0.22, false);          // volet qui part
+        clack(actx, master, noiseBuf, base + (delay + 140) / 1000, 0.38, true);   // volet qui retombe
+      }
+      setTimeout(() => {
+        if (id !== renderId) return;
+        tile.classList.add('flip');
+        setTimeout(() => {
+          if (id === renderId) applyTile(tile, val);
+          tile.classList.remove('flip');
+        }, 140);
+      }, delay);
+    });
+  }
+
+  /* ================= Rotation des messages ================= */
+  let msgIndex = -1;
+  let customUntil = Number(store.get('customUntil') || 0);
+  function eligible() {
+    const now = new Date(), d = now.getDay(), h = now.getHours();
+    const list = CONFIG.messages.filter(m => !m.quand ||
+      ((!m.quand.jours || m.quand.jours.includes(d)) && h >= (m.quand.de ?? 0) && h < (m.quand.a ?? 24)));
+    return (list.length ? list : CONFIG.messages).concat(dynamicMessages());
+  }
+  function nextMessage(manual) {
+    if (manual) { customUntil = 0; store.set('customUntil', 0); }
+    const list = eligible();
+    msgIndex = (msgIndex + 1) % list.length;
+    showLines(list[msgIndex].lignes, manual ? true : CONFIG.son.surRotation);
+    resetRotation();
+  }
+  let rotTimer;
+  function resetRotation() {
+    clearInterval(rotTimer);
+    rotTimer = setInterval(() => { if (Date.now() >= customUntil) nextMessage(false); }, CONFIG.rotationSec * 1000);
+  }
+
+  /* ================= Messages depuis messages.json ================= */
+  async function loadRemote() {
+    try {
+      const res = await fetch('messages.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      const j = await res.json();
+      if (Array.isArray(j.messages) && j.messages.length && j.messages.every(m => Array.isArray(m.lignes))) CONFIG.messages = j.messages;
+      if (Array.isArray(j.radios) && j.radios.length) { CONFIG.radios = j.radios; buildRadios(); }
+      if (j.instagram && typeof j.instagram.url === 'string' && j.instagram.url !== CONFIG.instagram.url) { CONFIG.instagram.url = j.instagram.url; buildInstagram(); }
+      if (j.rotationSec && j.rotationSec !== CONFIG.rotationSec) { CONFIG.rotationSec = j.rotationSec; resetRotation(); }
+    } catch (e) { /* on garde la configuration embarquée */ }
+  }
+
+  /* ================= Planning d'équipe (planning.json) ================= */
+  let planning = null;
+  const JOURS = ['L', 'M', 'M', 'J', 'V'];
+  function iso(d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); }
+  function weekDays() {
+    const t = new Date(); t.setHours(12, 0, 0, 0);
+    const dow = t.getDay(), mon = new Date(t);
+    mon.setDate(t.getDate() + (dow === 0 ? 1 : dow === 6 ? 2 : -(dow - 1)));
+    const days = [];
+    for (let w = 0; w < 2; w++) for (let i = 0; i < 5; i++) { const d = new Date(mon); d.setDate(mon.getDate() + w * 7 + i); days.push(d); }
+    return days;
+  }
+  function planningAgeDays() { return planning && planning.genere ? (Date.now() - Date.parse(planning.genere)) / 86400000 : 99; }
+  function el(tag, cls, txt) { const e = document.createElement(tag); if (cls) e.className = cls; if (txt !== undefined) e.textContent = txt; return e; }
+  function buildPlanning() {
+    const box = $('planBox'), cap = $('planCap');
+    box.innerHTML = '';
+    if (!planning || !Array.isArray(planning.personnes)) {
+      box.appendChild(el('p', 'empty', 'Planning non connecté.')); cap.textContent = ''; cap.className = ''; return;
+    }
+    const days = weekDays(), today = iso(new Date());
+    const table = el('table', 'plan'), thead = el('thead'), hr = el('tr');
+    hr.appendChild(el('th', 'name'));
+    days.forEach((d, i) => {
+      const th = el('th', iso(d) === today ? 'today' : '');
+      th.appendChild(el('span', '', JOURS[i % 5])); th.appendChild(el('b', '', String(d.getDate())));
+      hr.appendChild(th);
+    });
+    thead.appendChild(hr); table.appendChild(thead);
+    const tbody = el('tbody');
+    planning.personnes.forEach(name => {
+      const abs = (planning.absences && planning.absences[name]) || {};
+      const tr = el('tr'); tr.appendChild(el('td', 'name', name));
+      days.forEach(d => {
+        const k = iso(d), v = abs[k];
+        tr.appendChild(el('td', 'c' + (k === today ? ' today' : '') + (k < today ? ' past' : '') + (v ? ' a' + v : '')));
+      });
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody); box.appendChild(table);
+    const g = planning.genere ? new Date(planning.genere) : null;
+    const when = g ? g.toLocaleDateString('fr-FR', { day: 'numeric', month: 'numeric' }) + ' à ' + g.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : 'date inconnue';
+    const stale = planningAgeDays() > 3;
+    cap.className = stale ? 'warn' : '';
+    cap.textContent = (stale ? 'Données anciennes, dernière mise à jour le ' : 'Absences · mis à jour le ') + when + ' · orange : absent, moitié gauche : matin, moitié droite : après-midi';
+  }
+  function absentsAujourdhui() {
+    if (!planning || !planning.absences || planningAgeDays() > 3) return null;
+    const dow = new Date().getDay(); if (dow === 0 || dow === 6) return null;
+    const t = iso(new Date()), out = [];
+    (planning.personnes || []).forEach(p => {
+      const v = (planning.absences[p] || {})[t];
+      if (v) out.push(p + (v === 'M' ? ' (AM)' : v === 'A' ? ' (PM)' : ''));
+    });
+    return out;
+  }
+  function dynamicMessages() {
+    const a = absentsAujourdhui();
+    if (a === null) return [];
+    if (!a.length) return [{ lignes: ["AUCUNE ABSENCE", "AUJOURD'HUI", "", "[G][G][G][G][G]"] }];
+    const noms = a.length <= 3 ? a : [a[0], a[1], '+' + (a.length - 2) + ' AUTRES'];   // un prénom par ligne
+    return [{ lignes: ["ABSENTS DU JOUR"].concat(noms) }];
+  }
+  async function loadPlanning() {
+    try {
+      const res = await fetch('planning.json?t=' + Date.now(), { cache: 'no-store' });
+      if (!res.ok) throw new Error(res.status);
+      const j = await res.json();
+      if (Array.isArray(j.personnes)) { planning = j; buildPlanning(); }
+    } catch (e) { /* on garde les dernières données */ }
+  }
+
+  /* ================= Message libre ================= */
+  function openModal() { $('modal').style.display = 'flex'; const i = $('msgInput'); i.value = ''; i.focus(); }
+  function closeModal() { $('modal').style.display = 'none'; }
+  function saveCustomMsg() {
+    const txt = $('msgInput').value;
+    if (txt.trim()) {
+      customUntil = Date.now() + CONFIG.customHoldMin * 60000;
+      store.set('customUntil', customUntil);
+      store.set('customText', txt);
+      showLines(textToLines(txt), true);
+    }
+    closeModal();
+  }
+  $('msgInput').addEventListener('keydown', e => { if (e.key === 'Enter') saveCustomMsg(); });
+
+  /* ================= Radio ================= */
+  const audio = new Audio();
+  audio.preload = 'none';
+  let radioIdx = -1, retryTimer = null;
+  function buildRadios() {
+    const box = $('radioList'); box.innerHTML = '';
+    CONFIG.radios.forEach((r, i) => {
+      const b = document.createElement('button');
+      b.className = 'btn radio'; b.id = 'radio' + i; b.textContent = '📻 ' + r.nom;
+      b.onclick = () => playRadio(i);
+      box.appendChild(b);
+    });
+    paintRadio('');
+  }
+  function paintRadio(status) {
+    CONFIG.radios.forEach((r, i) => { const b = $('radio' + i); if (b) b.classList.toggle('active', i === radioIdx); });
+    $('radioStatus').textContent = status || (radioIdx >= 0 ? 'En écoute : ' + CONFIG.radios[radioIdx].nom : 'Choisissez une station.');
+    $('now').textContent = radioIdx >= 0 ? '♪ ' + CONFIG.radios[radioIdx].nom : '';
+  }
+  function playRadio(i) {
+    clearTimeout(retryTimer);
+    if (i === radioIdx && !audio.paused) { stopRadio(); return; }
+    radioIdx = i;
+    audio.src = CONFIG.radios[i].url;
+    paintRadio('Connexion...');
+    audio.play().then(() => paintRadio('')).catch(() => paintRadio('Flux indisponible, nouvel essai...'));
+  }
+  function stopRadio() {
+    clearTimeout(retryTimer);
+    radioIdx = -1; audio.pause(); audio.removeAttribute('src'); audio.load(); paintRadio('');
+  }
+  function scheduleRetry() {
+    if (radioIdx < 0) return;
+    clearTimeout(retryTimer);
+    paintRadio('Flux interrompu, nouvel essai...');
+    retryTimer = setTimeout(() => { if (radioIdx >= 0) playRadio(radioIdx); }, 8000);
+  }
+  audio.addEventListener('error', scheduleRetry);
+  audio.addEventListener('ended', scheduleRetry);
+  audio.addEventListener('stalled', () => { if (radioIdx >= 0) paintRadio('Chargement...'); });
+  audio.addEventListener('playing', () => paintRadio(''));
+
+  /* ================= Instagram ================= */
+  function buildInstagram() {
+    const box = $('igbox'), url = CONFIG.instagram.url;
+    box.innerHTML = '';
+    if (url) {
+      const f = document.createElement('iframe');
+      f.src = url; f.loading = 'lazy'; f.setAttribute('allowtransparency', 'true');
+      box.appendChild(f);
+    } else {
+      box.innerHTML = '<p>Instagram Groupe Opus : à connecter.<br>(étape 5 du projet)</p>';
+    }
+  }
+
+  /* ================= Navigation ================= */
+  const scroller = $('scroller');
+  function goTo(n) { scroller.scrollTo({ top: n * scroller.clientHeight, behavior: 'smooth' }); }
+  let lastTouch = Date.now();
+  ['touchstart', 'click', 'scroll'].forEach(ev => document.addEventListener(ev, () => { lastTouch = Date.now(); }, { passive: true, capture: true }));
+  setInterval(() => {
+    if (scroller.scrollTop > 20 && Date.now() - lastTouch > CONFIG.retourAccueilSec * 1000) goTo(0);
+  }, 10000);
+
+  const dock = $('dock');
+  let dockTimer;
+  function showDock() {
+    dock.classList.remove('hidden');
+    clearTimeout(dockTimer);
+    dockTimer = setTimeout(() => dock.classList.add('hidden'), 10000);
+  }
+  $('p1').addEventListener('click', () => showDock());
+
+  /* ================= Horloge ================= */
+  function updateClock() {
+    const now = new Date();
+    $('clock').textContent = now.toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' });
+    const d = now.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' });
+    $('date').textContent = d.charAt(0).toUpperCase() + d.slice(1);
+  }
+  setInterval(updateClock, 1000); updateClock();
+
+  /* ================= Météo (Open-Meteo, sans clé) ================= */
+  function wmo(c) {
+    if (c === 0) return ['☀️', 'Dégagé'];
+    if (c <= 2) return ['⛅', 'Peu nuageux'];
+    if (c === 3) return ['☁️', 'Couvert'];
+    if (c <= 48) return ['🌫️', 'Brouillard'];
+    if (c <= 57) return ['🌦️', 'Bruine'];
+    if (c <= 67) return ['🌧️', 'Pluie'];
+    if (c <= 77) return ['❄️', 'Neige'];
+    if (c <= 82) return ['🌦️', 'Averses'];
+    if (c <= 86) return ['🌨️', 'Averses de neige'];
+    return ['⛈️', 'Orage'];
+  }
+  function paintWeather(w, stale) {
+    const [icon, label] = wmo(w.code);
+    $('temp').textContent = `${w.temp}°`;
+    $('wdesc').textContent = `${icon} ${label}${stale ? ' (hors ligne)' : ''}`;
+    $('wsub').textContent = `Min ${w.min}° · Max ${w.max}° · Vent ${w.wind} km/h`;
+  }
+  async function updateWeather() {
+    const url = 'https://api.open-meteo.com/v1/forecast?latitude=' + CONFIG.lat + '&longitude=' + CONFIG.lon +
+      '&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min&timezone=Europe%2FParis&forecast_days=1';
+    try {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(res.status);
+      const d = await res.json();
+      const w = {
+        temp: Math.round(d.current.temperature_2m), code: d.current.weather_code,
+        wind: Math.round(d.current.wind_speed_10m),
+        min: Math.round(d.daily.temperature_2m_min[0]), max: Math.round(d.daily.temperature_2m_max[0])
+      };
+      store.set('weather', JSON.stringify(w));
+      paintWeather(w, false);
+    } catch (e) {
+      const old = store.get('weather');
+      if (old) paintWeather(JSON.parse(old), true);
+      else $('wdesc').textContent = 'Météo indisponible';
+    }
+  }
+  updateWeather(); setInterval(updateWeather, 15 * 60000);
+
+  /* ================= Mode nuit : Auto / Nuit / Jour ================= */
+  const DIM_MODES = ['auto', 'nuit', 'jour'];
+  const DIM_LABELS = { auto: 'Auto', nuit: 'Nuit', jour: 'Jour' };
+  let dimMode = store.get('dimMode') || 'auto';
+  function isNight() {
+    const h = new Date().getHours(), n = CONFIG.nuit;
+    return n.debut > n.fin ? (h >= n.debut || h < n.fin) : (h >= n.debut && h < n.fin);
+  }
+  function dimmedNow() { return dimMode === 'nuit' || (dimMode === 'auto' && isNight()); }
+  function applyDim() {
+    const on = dimmedNow();
+    $('dim').style.opacity = on ? CONFIG.nuit.voile : 0;
+    $('btnDim').textContent = '🌙 ' + DIM_LABELS[dimMode];
+    if (on && dimMode === 'auto' && radioIdx >= 0) stopRadio();   // la radio s'arrête la nuit
+  }
+  function cycleDim() {
+    dimMode = DIM_MODES[(DIM_MODES.indexOf(dimMode) + 1) % DIM_MODES.length];
+    store.set('dimMode', dimMode); applyDim(); showDock();
+  }
+  applyDim(); setInterval(applyDim, 60000);
+
+  /* ================= Démarrage ================= */
+  buildRadios(); buildInstagram(); paintSoundBtn();
+  loadRemote(); setInterval(loadRemote, 60000);
+  buildPlanning(); loadPlanning(); setInterval(loadPlanning, 10 * 60000); setInterval(buildPlanning, 30 * 60000);
+  if (Date.now() < customUntil && store.get('customText')) showLines(textToLines(store.get('customText')), false);
+  else nextMessage(false);
+  resetRotation();
+  if (soundOn) $('soundGate').style.display = 'flex';
+</script>
+</body>
+</html>

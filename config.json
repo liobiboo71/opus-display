@@ -1,0 +1,15 @@
+{
+  "organisation": 10152,
+  "equipes": [10392, 10467],
+  "personnes": {
+    "Vanessa": 50368,
+    "Séverine": 49502,
+    "Anna": 98485,
+    "Fanny": 98486,
+    "Alexandre": 49504,
+    "Lucyna": 50501,
+    "Anne-Charlotte": 50500
+  },
+  "exclure_types": [169731],
+  "jours_apres": 27
+}

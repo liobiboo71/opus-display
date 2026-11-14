@@ -1,0 +1,10 @@
+{
+  "rotationSec": 45,
+  "messages": [
+    { "lignes": ["BONJOUR A TOUS", "2LE ARCHITECTURE", "STUDIO BOAZ", "[B][B][B][B][B]"] },
+    { "lignes": ["PENSEZ A SAISIR", "VOS TEMPS", "DANS OOTI", "[Y][Y][Y][Y][Y]"] },
+    { "lignes": ["LESS IS MORE", "", "MIES VAN DER ROHE", "[O][O][O][O][O]"] },
+    { "lignes": ["BON APPETIT", "", "PAUSE DEJEUNER", "[G][G][G][G][G]"], "quand": { "jours": [1, 2, 3, 4, 5], "de": 12, "a": 14 } },
+    { "lignes": ["BON WEEK-END", "A TOUS !", "", "[R][O][Y][G][B]"], "quand": { "jours": [5], "de": 16, "a": 24 } }
+  ]
+}
