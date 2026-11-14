@@ -1,12 +1,12 @@
-name: Publier l'affichage open space
+name: Publier l affichage open space
 
 on:
   push:
     branches: [main]
-    paths: [index.html, messages.json, planning.py, config.json, .github/workflows/deploy.yml]
+    paths: [index.html, envoyer.html, message.mjs, package.json, messages.json, planning.py, config.json, .github/workflows/deploy.yml]
   schedule:
-    - cron: "30 6 * * 1-5"
-    - cron: "30 11 * * 1-5"
+    - cron: "30 6 * * 1-5"    # apres la synchro PayFit de 6h UTC (7h30 Paris l'hiver)
+    - cron: "30 11 * * 1-5"   # mise a jour de la mi-journee
   workflow_dispatch:
 
 env:
@@ -21,7 +21,16 @@ jobs:
       - name: Preparer le dossier a publier
         run: |
           mkdir public
-          cp index.html messages.json public/
+          cp index.html envoyer.html messages.json public/
+
+      - name: Preparer la fonction d envoi de messages
+        env:
+          MESSAGE_PIN: ${{ secrets.MESSAGE_PIN }}
+        run: |
+          mkdir fonctions
+          cp message.mjs fonctions/
+          node -e 'require("fs").writeFileSync("fonctions/pin.mjs", "export default " + JSON.stringify(process.env.MESSAGE_PIN || "") + ";\n")'
+          npm install --omit=dev --no-audit --no-fund
 
       - name: Generer le planning depuis OOTI
         id: planning
@@ -39,10 +48,10 @@ jobs:
         env:
           NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
           NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
-        run: npx --yes netlify-cli@latest deploy --dir=public --prod --no-build --message "GitHub Actions ${{ github.sha }}"
+        run: npx --yes netlify-cli@latest deploy --dir=public --functions=fonctions --prod --no-build --message "GitHub Actions ${{ github.sha }}"
 
-      - name: Signaler l'echec du planning
+      - name: Signaler l'echec du planning (e-mail GitHub)
         if: steps.planning.outcome == 'failure'
         run: |
-          echo "::error::Le planning OOTI n'a pas pu etre genere. Le site a ete publie avec le dernier planning connu."
+          echo "::error::Le planning OOTI n a pas pu etre genere. Le site a ete publie avec le dernier planning connu."
           exit 1
