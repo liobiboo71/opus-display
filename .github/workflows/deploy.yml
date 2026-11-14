@@ -1,0 +1,48 @@
+name: Publier l'affichage open space
+
+on:
+  push:
+    branches: [main]
+    paths: [index.html, messages.json, planning.py, config.json, .github/workflows/deploy.yml]
+  schedule:
+    - cron: "30 6 * * 1-5"    # après la synchro PayFit de 6h UTC (7h30 Paris l'hiver)
+    - cron: "30 11 * * 1-5"   # mise à jour de la mi-journée
+  workflow_dispatch:
+
+env:
+  SITE_URL: https://superb-genie-9cda0e.netlify.app
+
+jobs:
+  publier:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Préparer le dossier à publier
+        run: |
+          mkdir public
+          cp index.html messages.json public/
+
+      - name: Générer le planning depuis OOTI
+        id: planning
+        continue-on-error: true
+        env:
+          OOTI_USER: ${{ secrets.OOTI_USER }}
+          OOTI_PASSWORD: ${{ secrets.OOTI_PASSWORD }}
+        run: python3 planning.py --sortie public/planning.json
+
+      - name: Si OOTI a échoué, reprendre le dernier planning publié
+        if: steps.planning.outcome == 'failure'
+        run: curl -fsS "$SITE_URL/planning.json" -o public/planning.json || echo "Pas de planning précédent."
+
+      - name: Publier sur Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@latest deploy --dir=public --prod --message "GitHub Actions ${{ github.sha }}"
+
+      - name: Signaler l'échec du planning (e-mail GitHub)
+        if: steps.planning.outcome == 'failure'
+        run: |
+          echo "::error::Le planning OOTI n'a pas pu être généré. Le site a été publié avec le dernier planning connu."
+          exit 1
